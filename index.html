@@ -1,0 +1,693 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+// ─── Data ───────────────────────────────────────────────────────────────────
+const INITIAL_ROOMS = [
+  { id: "R101", number: "101", type: "Deluxe Suite",    floor: 1, rate: 450, status: "occupied",  guest: "G001", checkIn: "2026-03-28", checkOut: "2026-04-02", amenities: ["🛁","🍾","🌅"] },
+  { id: "R102", number: "102", type: "Premier Room",    floor: 1, rate: 280, status: "available", guest: null,   checkIn: null,         checkOut: null,         amenities: ["🛁","📺"] },
+  { id: "R103", number: "103", type: "Premier Room",    floor: 1, rate: 280, status: "cleaning",  guest: null,   checkIn: null,         checkOut: null,         amenities: ["🛁","📺"] },
+  { id: "R104", number: "104", type: "Grand Suite",     floor: 1, rate: 680, status: "occupied",  guest: "G002", checkIn: "2026-03-29", checkOut: "2026-04-05", amenities: ["🛁","🍾","🌅","🎩"] },
+  { id: "R201", number: "201", type: "Penthouse",       floor: 2, rate: 1200,status: "available", guest: null,   checkIn: null,         checkOut: null,         amenities: ["🛁","🍾","🌅","🎩","🏊"] },
+  { id: "R202", number: "202", type: "Deluxe Suite",    floor: 2, rate: 450, status: "occupied",  guest: "G003", checkIn: "2026-03-30", checkOut: "2026-04-01", amenities: ["🛁","🍾","🌅"] },
+  { id: "R203", number: "203", type: "Premier Room",    floor: 2, rate: 280, status: "reserved",  guest: "G004", checkIn: "2026-04-01", checkOut: "2026-04-04", amenities: ["🛁","📺"] },
+  { id: "R204", number: "204", type: "Grand Suite",     floor: 2, rate: 680, status: "occupied",  guest: "G005", checkIn: "2026-03-27", checkOut: "2026-04-03", amenities: ["🛁","🍾","🌅","🎩"] },
+];
+
+const INITIAL_GUESTS = [
+  { id: "G001", name: "Alexandra Mercer",  email: "a.mercer@email.com",   phone: "+1 212 555 0101", room: "R101", nights: 5, total: 2250, status: "checked-in",  vip: true,  avatar: "AM" },
+  { id: "G002", name: "Sebastian Hartmann",email: "s.hart@gmail.com",     phone: "+49 30 555 0182", room: "R104", nights: 7, total: 4760, status: "checked-in",  vip: true,  avatar: "SH" },
+  { id: "G003", name: "Isabelle Laurent",  email: "i.laurent@mail.fr",    phone: "+33 1 555 0143",  room: "R202", nights: 2, total: 900,  status: "checked-in",  vip: false, avatar: "IL" },
+  { id: "G004", name: "James Whitmore",    email: "j.whitmore@corp.com",  phone: "+44 20 555 0174", room: "R203", nights: 3, total: 840,  status: "reserved",    vip: false, avatar: "JW" },
+  { id: "G005", name: "Yuki Tanaka",       email: "yuki.t@outlook.jp",    phone: "+81 3 555 0165",  room: "R204", nights: 7, total: 4760, status: "checked-in",  vip: true,  avatar: "YT" },
+];
+
+const TRANSACTIONS = [
+  { id: "T001", guest: "Alexandra Mercer",  type: "Room",     desc: "Deluxe Suite – 5 nights",    amount: 2250, date: "2026-03-28", status: "paid" },
+  { id: "T002", guest: "Sebastian Hartmann",type: "Room",     desc: "Grand Suite – 7 nights",      amount: 4760, date: "2026-03-29", status: "paid" },
+  { id: "T003", guest: "Isabelle Laurent",  type: "F&B",      desc: "In-room dining",               amount: 340,  date: "2026-03-30", status: "pending" },
+  { id: "T004", guest: "Yuki Tanaka",       type: "Spa",      desc: "Signature spa treatment",      amount: 580,  date: "2026-03-29", status: "paid" },
+  { id: "T005", guest: "James Whitmore",    type: "Room",     desc: "Premier Room – 3 nights",      amount: 840,  date: "2026-04-01", status: "pending" },
+  { id: "T006", guest: "Alexandra Mercer",  type: "Concierge",desc: "Private airport transfer",     amount: 220,  date: "2026-03-28", status: "paid" },
+];
+
+const STATUS_META = {
+  available: { color: "#2ecc71", label: "Available",  bg: "rgba(46,204,113,0.15)" },
+  occupied:  { color: "#e67e22", label: "Occupied",   bg: "rgba(230,126,34,0.15)"  },
+  cleaning:  { color: "#3498db", label: "Cleaning",   bg: "rgba(52,152,219,0.15)"  },
+  reserved:  { color: "#9b59b6", label: "Reserved",   bg: "rgba(155,89,182,0.15)"  },
+};
+
+// ─── Hooks ──────────────────────────────────────────────────────────────────
+function useDragAndDrop(items, setItems) {
+  const dragItem = useRef(null);
+  const dragOver = useRef(null);
+
+  const onDragStart = useCallback((e, id) => {
+    dragItem.current = id;
+    e.dataTransfer.effectAllowed = "move";
+    e.currentTarget.style.opacity = "0.4";
+  }, []);
+
+  const onDragEnd = useCallback((e) => {
+    e.currentTarget.style.opacity = "1";
+    if (dragItem.current !== null && dragOver.current !== null && dragItem.current !== dragOver.current) {
+      setItems(prev => {
+        const arr = [...prev];
+        const fromIdx = arr.findIndex(r => r.id === dragItem.current);
+        const toIdx   = arr.findIndex(r => r.id === dragOver.current);
+        const [moved] = arr.splice(fromIdx, 1);
+        arr.splice(toIdx, 0, moved);
+        return arr;
+      });
+    }
+    dragItem.current = null;
+    dragOver.current = null;
+  }, [setItems]);
+
+  const onDragOver = useCallback((e, id) => {
+    e.preventDefault();
+    dragOver.current = id;
+  }, []);
+
+  return { onDragStart, onDragEnd, onDragOver };
+}
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
+function Sidebar({ active, setActive }) {
+  const nav = [
+    { id: "overview",  icon: "◈", label: "Overview"  },
+    { id: "rooms",     icon: "⊞", label: "Rooms"     },
+    { id: "guests",    icon: "✦", label: "Guests"    },
+    { id: "billing",   icon: "◎", label: "Billing"   },
+  ];
+  return (
+    <aside style={styles.sidebar}>
+      <div style={styles.logoWrap}>
+        <div style={styles.logoMark}>⬡</div>
+        <div>
+          <div style={styles.logoName}>ELARA</div>
+          <div style={styles.logoSub}>Hotel & Residences</div>
+        </div>
+      </div>
+      <nav style={{ marginTop: 40 }}>
+        {nav.map(n => (
+          <button
+            key={n.id}
+            onClick={() => setActive(n.id)}
+            style={{ ...styles.navItem, ...(active === n.id ? styles.navActive : {}) }}
+          >
+            <span style={styles.navIcon}>{n.icon}</span>
+            <span>{n.label}</span>
+            {active === n.id && <span style={styles.navDot} />}
+          </button>
+        ))}
+      </nav>
+      <div style={styles.sidebarFooter}>
+        <div style={styles.staffAvatar}>CM</div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#e8dcc8" }}>Carlos M.</div>
+          <div style={{ fontSize: 11, color: "#8a7d6a" }}>Night Manager</div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function StatCard({ label, value, sub, accent }) {
+  return (
+    <div style={{ ...styles.statCard, borderTop: `2px solid ${accent}` }}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: "#8a7d6a", textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: "#f0e6d3", fontFamily: "'Playfair Display', Georgia, serif" }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: "#6b5f50", marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function Overview({ rooms, guests }) {
+  const occ  = rooms.filter(r => r.status === "occupied").length;
+  const avail = rooms.filter(r => r.status === "available").length;
+  const revToday = TRANSACTIONS.filter(t => t.status === "paid").reduce((s, t) => s + t.amount, 0);
+  const vips  = guests.filter(g => g.vip).length;
+
+  return (
+    <div>
+      <Header title="Good Evening" sub="Monday, 30 March 2026 · Night Shift" />
+      <div style={styles.statsGrid}>
+        <StatCard label="Occupied Rooms" value={occ} sub={`of ${rooms.length} total`} accent="#c9a96e" />
+        <StatCard label="Available"      value={avail} sub="ready for guests" accent="#2ecc71" />
+        <StatCard label="Revenue Today"  value={`$${revToday.toLocaleString()}`} sub="paid transactions" accent="#9b59b6" />
+        <StatCard label="VIP Guests"     value={vips} sub="in-house" accent="#e67e22" />
+      </div>
+
+      <div style={styles.twoCol}>
+        <div style={styles.card}>
+          <SectionTitle>Room Status</SectionTitle>
+          {Object.entries(STATUS_META).map(([s, m]) => {
+            const count = rooms.filter(r => r.status === s).length;
+            const pct = Math.round(count / rooms.length * 100);
+            return (
+              <div key={s} style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                  <span style={{ fontSize: 13, color: "#c2b49a" }}>{m.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: m.color }}>{count}</span>
+                </div>
+                <div style={{ height: 4, background: "#2a231b", borderRadius: 2 }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: m.color, borderRadius: 2, transition: "width .5s" }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={styles.card}>
+          <SectionTitle>Recent Activity</SectionTitle>
+          {TRANSACTIONS.slice(0, 4).map(t => (
+            <div key={t.id} style={styles.activityRow}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, color: "#d4c4a8", fontWeight: 500 }}>{t.guest}</div>
+                <div style={{ fontSize: 11, color: "#6b5f50", marginTop: 2 }}>{t.desc}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: t.status === "paid" ? "#c9a96e" : "#888" }}>
+                  ${t.amount.toLocaleString()}
+                </div>
+                <div style={{ fontSize: 10, color: t.status === "paid" ? "#2ecc71" : "#e67e22", textTransform: "uppercase", letterSpacing: 1 }}>
+                  {t.status}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RoomsView({ rooms, setRooms }) {
+  const { onDragStart, onDragEnd, onDragOver } = useDragAndDrop(rooms, setRooms);
+  const [filter, setFilter] = useState("all");
+
+  const filtered = filter === "all" ? rooms : rooms.filter(r => r.status === filter);
+
+  return (
+    <div>
+      <Header title="Room Layout" sub="Drag cards to rearrange • Swapy grid management" />
+      <div style={styles.filterRow}>
+        {["all", "available", "occupied", "cleaning", "reserved"].map(f => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            style={{ ...styles.filterBtn, ...(filter === f ? styles.filterActive : {}) }}
+          >
+            {f === "all" ? "All Rooms" : STATUS_META[f]?.label}
+          </button>
+        ))}
+      </div>
+      <div style={styles.roomsGrid}>
+        {filtered.map(room => {
+          const m = STATUS_META[room.status];
+          return (
+            <div
+              key={room.id}
+              draggable
+              onDragStart={e => onDragStart(e, room.id)}
+              onDragEnd={onDragEnd}
+              onDragOver={e => onDragOver(e, room.id)}
+              style={{ ...styles.roomCard, borderLeft: `3px solid ${m.color}`, cursor: "grab" }}
+            >
+              <div style={styles.roomCardHeader}>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#f0e6d3", fontFamily: "'Playfair Display', Georgia, serif" }}>
+                    {room.number}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#8a7d6a", letterSpacing: 1 }}>FLOOR {room.floor}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ ...styles.statusBadge, background: m.bg, color: m.color }}>{m.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "#c9a96e", marginTop: 6 }}>
+                    ${room.rate}<span style={{ fontSize: 10, color: "#6b5f50" }}>/night</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "#8a7d6a", marginBottom: 10 }}>{room.type}</div>
+              {room.guest && (
+                <div style={styles.guestTag}>
+                  <span style={{ color: "#c9a96e" }}>✦</span> {INITIAL_GUESTS.find(g => g.id === room.guest)?.name ?? room.guest}
+                </div>
+              )}
+              {room.checkIn && (
+                <div style={{ fontSize: 11, color: "#6b5f50", marginTop: 6 }}>
+                  {room.checkIn} → {room.checkOut}
+                </div>
+              )}
+              <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+                {room.amenities.map((a, i) => (
+                  <span key={i} style={styles.amenityPip}>{a}</span>
+                ))}
+              </div>
+              <div style={styles.dragHandle}>⠿</div>
+            </div>
+          );
+        })}
+      </div>
+      <p style={{ fontSize: 12, color: "#4a3f32", textAlign: "center", marginTop: 20 }}>
+        ↑ Drag any room card to rearrange the layout
+      </p>
+    </div>
+  );
+}
+
+function GuestsView({ guests }) {
+  const [search, setSearch] = useState("");
+  const filtered = guests.filter(g =>
+    g.name.toLowerCase().includes(search.toLowerCase()) ||
+    g.email.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      <Header title="Guest Management" sub={`${guests.length} guests · ${guests.filter(g => g.status === "checked-in").length} in-house`} />
+      <div style={{ marginBottom: 20 }}>
+        <input
+          style={styles.searchInput}
+          placeholder="Search guests by name or email…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {filtered.map(g => (
+          <div key={g.id} style={{ ...styles.guestRow, ...(g.vip ? styles.guestRowVip : {}) }}>
+            <div style={{ ...styles.avatar, background: g.vip ? "rgba(201,169,110,0.2)" : "rgba(138,125,106,0.15)", color: g.vip ? "#c9a96e" : "#8a7d6a" }}>
+              {g.avatar}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "#e8dcc8" }}>{g.name}</span>
+                {g.vip && <span style={styles.vipBadge}>VIP</span>}
+              </div>
+              <div style={{ fontSize: 12, color: "#6b5f50", marginTop: 2 }}>{g.email} · {g.phone}</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#f0e6d3", fontFamily: "'Playfair Display', Georgia, serif" }}>
+                Room {INITIAL_ROOMS.find(r => r.id === g.room)?.number ?? "—"}
+              </div>
+              <div style={{ fontSize: 11, color: "#6b5f50" }}>{g.nights} nights</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#c9a96e" }}>${g.total.toLocaleString()}</div>
+              <div style={{ ...styles.statusBadge, background: g.status === "checked-in" ? "rgba(46,204,113,0.15)" : "rgba(155,89,182,0.15)", color: g.status === "checked-in" ? "#2ecc71" : "#9b59b6" }}>
+                {g.status === "checked-in" ? "Checked In" : "Reserved"}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BillingView() {
+  const total = TRANSACTIONS.reduce((s, t) => s + t.amount, 0);
+  const paid  = TRANSACTIONS.filter(t => t.status === "paid").reduce((s, t) => s + t.amount, 0);
+  const pend  = total - paid;
+  const byType = TRANSACTIONS.reduce((acc, t) => {
+    acc[t.type] = (acc[t.type] || 0) + t.amount;
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      <Header title="Billing & Revenue" sub="Current billing period" />
+      <div style={styles.statsGrid}>
+        <StatCard label="Total Billed"  value={`$${total.toLocaleString()}`}  sub="this period"    accent="#c9a96e" />
+        <StatCard label="Collected"     value={`$${paid.toLocaleString()}`}   sub="paid"           accent="#2ecc71" />
+        <StatCard label="Outstanding"   value={`$${pend.toLocaleString()}`}   sub="pending"        accent="#e67e22" />
+        <StatCard label="Transactions"  value={TRANSACTIONS.length}            sub="total entries"  accent="#9b59b6" />
+      </div>
+
+      <div style={styles.twoCol}>
+        <div style={styles.card}>
+          <SectionTitle>By Category</SectionTitle>
+          {Object.entries(byType).map(([type, amt]) => {
+            const pct = Math.round(amt / total * 100);
+            const colors = { Room: "#c9a96e", "F&B": "#e67e22", Spa: "#9b59b6", Concierge: "#3498db" };
+            const col = colors[type] || "#888";
+            return (
+              <div key={type} style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 13, color: "#c2b49a" }}>{type}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: col }}>${amt.toLocaleString()}</span>
+                </div>
+                <div style={{ height: 6, background: "#2a231b", borderRadius: 3 }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: col, borderRadius: 3 }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={styles.card}>
+          <SectionTitle>Transaction Log</SectionTitle>
+          <div style={{ maxHeight: 320, overflowY: "auto" }}>
+            {TRANSACTIONS.map(t => (
+              <div key={t.id} style={styles.txRow}>
+                <div style={{ ...styles.txType, background: t.type === "Room" ? "rgba(201,169,110,0.15)" : "rgba(138,125,106,0.1)", color: t.type === "Room" ? "#c9a96e" : "#8a7d6a" }}>
+                  {t.type}
+                </div>
+                <div style={{ flex: 1, marginLeft: 12 }}>
+                  <div style={{ fontSize: 12, color: "#d4c4a8", fontWeight: 500 }}>{t.guest}</div>
+                  <div style={{ fontSize: 11, color: "#5a4f42" }}>{t.desc}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#f0e6d3" }}>${t.amount.toLocaleString()}</div>
+                  <div style={{ fontSize: 10, color: t.status === "paid" ? "#2ecc71" : "#e67e22", textTransform: "uppercase", letterSpacing: 1 }}>
+                    {t.status}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Header({ title, sub }) {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <h1 style={{ fontSize: 28, fontWeight: 700, color: "#f0e6d3", margin: 0, fontFamily: "'Playfair Display', Georgia, serif", letterSpacing: 0.5 }}>
+        {title}
+      </h1>
+      <p style={{ fontSize: 13, color: "#6b5f50", margin: "6px 0 0", letterSpacing: 0.5 }}>{sub}</p>
+    </div>
+  );
+}
+
+function SectionTitle({ children }) {
+  return (
+    <div style={{ fontSize: 11, letterSpacing: 2, color: "#8a7d6a", textTransform: "uppercase", marginBottom: 16, paddingBottom: 10, borderBottom: "1px solid #2a231b" }}>
+      {children}
+    </div>
+  );
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+const styles = {
+  app: {
+    display: "flex",
+    minHeight: "100vh",
+    background: "#0e0b08",
+    fontFamily: "'DM Sans', system-ui, sans-serif",
+    color: "#c2b49a",
+  },
+  sidebar: {
+    width: 220,
+    minWidth: 220,
+    background: "#141009",
+    borderRight: "1px solid #2a231b",
+    padding: "28px 20px",
+    display: "flex",
+    flexDirection: "column",
+  },
+  logoWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+  },
+  logoMark: {
+    fontSize: 28,
+    color: "#c9a96e",
+    lineHeight: 1,
+  },
+  logoName: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: "#f0e6d3",
+    letterSpacing: 3,
+    fontFamily: "'Playfair Display', Georgia, serif",
+  },
+  logoSub: {
+    fontSize: 9,
+    color: "#5a4f42",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  navItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    width: "100%",
+    padding: "11px 14px",
+    background: "none",
+    border: "none",
+    borderRadius: 8,
+    color: "#5a4f42",
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: "pointer",
+    textAlign: "left",
+    marginBottom: 2,
+    transition: "all 0.15s",
+    position: "relative",
+    letterSpacing: 0.3,
+  },
+  navActive: {
+    background: "rgba(201,169,110,0.1)",
+    color: "#c9a96e",
+  },
+  navIcon: {
+    fontSize: 16,
+    width: 20,
+    textAlign: "center",
+  },
+  navDot: {
+    position: "absolute",
+    right: 14,
+    width: 4,
+    height: 4,
+    borderRadius: "50%",
+    background: "#c9a96e",
+  },
+  sidebarFooter: {
+    marginTop: "auto",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    paddingTop: 20,
+    borderTop: "1px solid #2a231b",
+  },
+  staffAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: "50%",
+    background: "rgba(201,169,110,0.2)",
+    color: "#c9a96e",
+    fontSize: 12,
+    fontWeight: 700,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  main: {
+    flex: 1,
+    padding: "36px 40px",
+    overflowY: "auto",
+  },
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: 16,
+    marginBottom: 28,
+  },
+  statCard: {
+    background: "#141009",
+    border: "1px solid #2a231b",
+    borderRadius: 12,
+    padding: "20px 22px",
+  },
+  card: {
+    background: "#141009",
+    border: "1px solid #2a231b",
+    borderRadius: 12,
+    padding: "22px 24px",
+  },
+  twoCol: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 20,
+    marginTop: 8,
+  },
+  activityRow: {
+    display: "flex",
+    alignItems: "center",
+    paddingBottom: 14,
+    marginBottom: 14,
+    borderBottom: "1px solid #1e1912",
+  },
+  roomsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+    gap: 16,
+  },
+  roomCard: {
+    background: "#141009",
+    border: "1px solid #2a231b",
+    borderRadius: 12,
+    padding: "18px 20px",
+    position: "relative",
+    transition: "transform 0.15s, box-shadow 0.15s",
+    userSelect: "none",
+  },
+  roomCardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+  statusBadge: {
+    display: "inline-block",
+    padding: "3px 8px",
+    borderRadius: 20,
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  guestTag: {
+    fontSize: 12,
+    color: "#8a7d6a",
+    background: "rgba(201,169,110,0.08)",
+    padding: "4px 10px",
+    borderRadius: 6,
+    display: "inline-block",
+  },
+  amenityPip: {
+    fontSize: 14,
+    background: "#1e1912",
+    borderRadius: 6,
+    padding: "3px 6px",
+  },
+  dragHandle: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    fontSize: 16,
+    color: "#3a3028",
+    cursor: "grab",
+    letterSpacing: 2,
+  },
+  filterRow: {
+    display: "flex",
+    gap: 8,
+    marginBottom: 20,
+    flexWrap: "wrap",
+  },
+  filterBtn: {
+    padding: "7px 16px",
+    background: "none",
+    border: "1px solid #2a231b",
+    borderRadius: 20,
+    color: "#5a4f42",
+    fontSize: 12,
+    cursor: "pointer",
+    letterSpacing: 0.5,
+    transition: "all 0.15s",
+  },
+  filterActive: {
+    background: "rgba(201,169,110,0.15)",
+    borderColor: "#c9a96e",
+    color: "#c9a96e",
+  },
+  searchInput: {
+    width: "100%",
+    padding: "12px 18px",
+    background: "#141009",
+    border: "1px solid #2a231b",
+    borderRadius: 10,
+    color: "#d4c4a8",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box",
+    fontFamily: "inherit",
+  },
+  guestRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 16,
+    background: "#141009",
+    border: "1px solid #2a231b",
+    borderRadius: 12,
+    padding: "16px 20px",
+    transition: "border-color 0.15s",
+  },
+  guestRowVip: {
+    borderColor: "rgba(201,169,110,0.35)",
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: "50%",
+    fontSize: 13,
+    fontWeight: 700,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  vipBadge: {
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: 1.5,
+    padding: "2px 7px",
+    borderRadius: 10,
+    background: "rgba(201,169,110,0.15)",
+    color: "#c9a96e",
+    textTransform: "uppercase",
+  },
+  txRow: {
+    display: "flex",
+    alignItems: "center",
+    paddingBottom: 14,
+    marginBottom: 14,
+    borderBottom: "1px solid #1e1912",
+  },
+  txType: {
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: 0.5,
+    padding: "4px 9px",
+    borderRadius: 6,
+    textTransform: "uppercase",
+    whiteSpace: "nowrap",
+  },
+};
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+export default function SwapyHotel() {
+  const [active, setActive] = useState("overview");
+  const [rooms,  setRooms]  = useState(INITIAL_ROOMS);
+  const [guests]            = useState(INITIAL_GUESTS);
+
+  // inject Google Fonts
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.href = "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600&display=swap";
+    link.rel = "stylesheet";
+    document.head.appendChild(link);
+  }, []);
+
+  const views = {
+    overview: <Overview rooms={rooms} guests={guests} />,
+    rooms:    <RoomsView rooms={rooms} setRooms={setRooms} />,
+    guests:   <GuestsView guests={guests} />,
+    billing:  <BillingView />,
+  };
+
+  return (
+    <div style={styles.app}>
+      <Sidebar active={active} setActive={setActive} />
+      <main style={styles.main}>{views[active]}</main>
+    </div>
+  );
+}
